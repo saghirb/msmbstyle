@@ -23,14 +23,13 @@ msmb_html_book = function(...) {
 #' @param margin_references \code{logical}.  Determines whether to place 
 #'   citations in the margin, or collate them at the end of the document.
 #' @rdname msmb_html
+#' @importFrom bookdown resolve_refs_html
 #' @export
 msmb_html = function(
   ..., 
   margin_references = TRUE
 ) {
 
-  #tufte_variant = match.arg(tufte_variant)
-  ##if (missing(tufte_features) && tufte_variant != 'default') 
   tufte_variant = "envisioned"
   tufte_features = character()
   
@@ -63,6 +62,9 @@ msmb_html = function(
     knitr::opts_hooks$restore(ohooks)
 
     x = xfun::read_utf8(output)
+    
+    x = bookdown::resolve_refs_html(x)
+    
     fn_label = paste0(knitr::opts_knit$get('rmarkdown.pandoc.id_prefix'), 'fn')
     footnotes = tufte:::parse_footnotes(x, fn_label)
     notes = footnotes$items
@@ -266,8 +268,7 @@ msmb_html_dependency = function() {
         '<div class="dropdown-content">')
     x[toc_start:toc_end] <- x[toc_start:toc_end] %>%
         str_replace_all('<li>', '') %>% 
-        str_replace_all('</li>', '') #%>%
-        #str_replace_all('href="([[:alnum:]:-]+.html)?#[[:alpha:]:-]+', 'href="\\1')
+        str_replace_all('</li>', '')
     x[toc_end] <- '</div>\n</li>'
 
     ## close the navbar list
@@ -298,8 +299,9 @@ msmb_build_chapter = function(
              str_replace('href', 'id="active-page" href') %>%
              str_c(.create_section_links(chapter, include_nums = FALSE))
     
-    chapter <- .number_questions(chapter)
+    #chapter <- .number_questions(chapter)
     chapter <- .nonumber_chap_figs(chapter)
+    chapter <- .retag_margin_figures(chapter)
     
     paste(c(
         head,
@@ -313,7 +315,7 @@ msmb_build_chapter = function(
         chapter,
         '<p style="text-align: center;">',
         bookdown:::button_link(link_prev, 'Previous'),
-        bookdown:::edit_link(rmd_cur),
+        bookdown:::source_link(rmd_cur),
         bookdown:::button_link(link_next, 'Next'),
         '</p>',
         '<p class="build-date">Page built: ', as.character(Sys.Date()), '</p>',
@@ -342,13 +344,14 @@ msmb_build_chapter = function(
         MoreArgs = list(chapter = chapter, chap_num = chap_num))
     
     question_labs <- str_match(chapter[question_divs], "id=\"(ques:[[:alnum:]-]+)\"")[,2]
+
     for(i in seq_along(question_labs)) {
         ref_lines <- stringr::str_which(chapter, paste0("<a href=\".*#", question_labs[i], "\">"))
         chapter[ref_lines] <- str_replace(chapter[ref_lines], 
                                           "\\?\\?",
                                           paste0(chap_num, "\\.", i))
     }
-    
+
     return(chapter)
 }
 
@@ -393,4 +396,20 @@ msmb_build_chapter = function(
     chapter3 <- stringr::str_replace_all(chapter2, global_replacement)
     stringr::str_split(chapter3, "\n")[[1]]
 
+}
+
+## the ID attribute/anchor for margin figures ends up inside a comment block
+## Here we look for these, and move the id into a 'name' attribute
+## for the appropriate <img> tag
+.retag_margin_figures <- function(chapter) {
+    idx <- stringr::str_which(chapter, "<img.*<!--<span id")
+    
+    if(length(idx)) {
+    #for(i in seq_along(idx)) {
+        id <- str_match(chapter[idx], pattern = "<!--<span (id=\"fig:[[:alnum:]-]+\")")[,2]
+        chapter[idx] <- str_replace(chapter[idx], pattern = "<img ", paste0("<img ", id, " ")) %>%
+            stringr::str_replace_all("<!--<span id=\"fig:.*</span>", "<!--")
+    }
+    
+    return(chapter)
 }
